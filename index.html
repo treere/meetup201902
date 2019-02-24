@@ -1,0 +1,515 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>Rust Meetup</title>
+
+    <link rel="stylesheet" href="css/reveal.css">
+    <link rel="stylesheet" href="css/theme/beige.css">
+
+    <!-- Theme used for syntax highlighting of code -->
+    <link rel="stylesheet" href="lib/css/github-gist.css">
+
+    <!-- Printing and PDF exports -->
+    <script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+    </script>
+</head>
+<body>
+<div class="reveal">
+    <div class="slides">
+        <section data-markdown>
+			<textarea data-template>
+						# Di chi é questo buffer
+						## Andrea Tomasi
+						#### git: [treere](https://github.com/treere) | tw: [@tre3ere](https://twitter.com/tre3ere)
+						### [ARGO vision](argo.vision)
+			</textarea>
+        </section>
+        <section>
+            <section data-markdown>
+				<textarea data-template>
+## Definizione
+
+* memoria tampone
+* memoria di transito
+* memoria intermediaria
+				</textarea>
+			</section>
+
+            <section data-markdown>
+				<textarea data-template>
+## Una prima rappresenzatione
+
+```rust
+struct View<'a> {
+	buff: &'a[u8]
+}
+
+impl<'a> View<'a> {
+	fn get_size(&self) -> u8 {
+		self.buff[0]
+	}
+}
+```
+					</textarea>
+			</section>
+
+            <section data-markdown>
+				<textarea data-template>
+## E cosí con la mutabilitá
+
+```rust
+struct ViewMut<'a> {
+	buff: &'a mut [u8]
+}
+
+impl<'a> ViewMut<'a> {
+	fn get_size(&self) -> u8 {
+		self.buff[0]
+	}
+	fn set_size(&mut self, val : u8) {
+		self.buff[0] = val
+	}
+}
+```
+					</textarea>
+			</section>
+
+            <section data-markdown>
+				<textarea data-template>
+## Ora possiamo
+
+```rust
+fn main() {
+	let mut v = vec![0,1,2];
+	{
+		let b = View{buff:&v[..]};
+	}
+	{
+		let mut b = ViewMut{buff:&mut v[..]};
+	}
+}
+```
+				</textarea>
+			</section>
+            <section data-markdown>
+				<textarea data-template>
+## Ma non questo
+
+```rust
+fn main() {
+	let mut v = vec![0,1,2];
+	{
+		let b = View{buff:& mut v[..]};
+	}
+	{
+		let b = ViewMut{buff:&v[..]};
+	}
+}
+```
+				</textarea>
+			</section>
+            <section data-markdown>
+				<textarea data-template>
+## Molto molto male
+
+* Tipi diversi per la mutabilitá.
+* Vincolati solo a `[u8]`.
+* Enorme duplicazione del codice.
+				</textarea>
+			</section>
+        </section>
+
+
+        <section>
+            <section data-markdown>
+				<textarea data-template>
+# Borrowing
+## cosa volevo veramente?
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+# Borrowing
+* Poter usare il buffer come uno slice.
+* Poter avere la mutabilitá ma non esserne vincolato.
+* Non dovermi curare del tempo di vita del buffer.
+				</textarea>
+			</section>
+            <section data-markdown>
+				<textarea data-template>
+std::borrow::Borrow
+```rust
+pub trait Borrow<Borrowed>
+where Borrowed: ?Sized
+{
+	fn borrow(&self) -> &Borrowed;
+}
+```
+
+std::borrow::BorrowMut
+```rust
+pub trait BorrowMut < Borrowed > : Borrow< Borrowed >
+where Borrowed: ?Sized
+{
+	fn borrow_mut(&mut self) -> &mut Borrowed;
+}
+```
+				</textarea>
+			</section>
+            <section data-markdown>
+				<textarea data-template>
+## Borrow version
+
+```rust
+struct View<T : Borrow<[u8]>> {
+	buff: T
+}
+
+impl<T : Borrow<[u8]>> View<T> {
+	fn get_size(&self) -> u8 {
+		self.buff.borrow()[0]
+	}
+}
+
+impl<T : BorrowMut<[u8]>> View<T> {
+	fn set_size(&mut self, val : u8) {
+		self.buff.borrow_mut()[0] = val
+	}
+}
+```
+				</textarea>
+			</section>
+            <section data-markdown>
+				<textarea data-template>
+## Meglio
+* no lifetime :)
+* una sola struttura
+* enfasi sul comportamento
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+## Ma vorrei di piú
+* possiamo avere di piú?
+* abbiamo giá avuto di piú?..Vec!
+* Possiamo usare una stringa?
+				</textarea>
+			</section>
+		</section>
+
+        <section>
+            <section data-markdown>
+				<textarea data-template>
+# As you like
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+std::convert::AsRef
+```rust
+pub trait AsRef<T> where T: ?Sized
+{
+    fn as_ref(&self) -> &T;
+}
+```
+
+std::convert::AsMut
+```rust
+pub trait AsMut<T> where T: ?Sized
+{
+    fn as_mut(&mut self) -> &mut T;
+}
+```
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+# AsRef
+## Differenze?
+
+* Use AsRef when the goal is to simply convert into a reference
+* Use Borrow when the goal is related to writing code that is agnostic to the type of borrow and whether it is a reference or value
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+# Reali differenze?
+```rust
+#[stable(feature = "box_borrow", since = "1.1.0")]
+impl<T: ?Sized> borrow::Borrow<T> for Box<T> {
+	fn borrow(&self) -> &T {
+		&**self
+	}
+}
+```
+```rust
+#[stable(since = "1.5.0", feature = "smart_ptr_as_ref")]
+impl<T: ?Sized> AsRef<T> for Box<T> {
+	fn as_ref(&self) -> &T {
+		&**self
+	}
+}
+```
+					</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+## Super new version
+
+```rust
+struct View<T : AsRef<[u8]>> {
+	buff: T
+}
+
+impl<T : AsRef<[u8]>> View<T> {
+	fn get_size(&self) -> u8 {
+		self.buff.as_ref()[0]
+	}
+}
+
+impl<T : AsRef<[u8]> + AsMut<[u8]>> View<T> {
+	fn set_size(&mut self, val : u8) {
+		self.buff.as_mut()[0] = val
+	}
+}
+```
+				</textarea>
+			</section>
+            <section data-markdown>
+				<textarea data-template>
+# Ancora meglio
+* Poco piú flessibili
+* sempre safe
+* Un pó ingannevole ma era quello che volevo
+				</textarea>
+			</section>
+            <section data-markdown>
+				<textarea data-template>
+# MA
+
+Il lifetime che abbiamo perso che fine ha fatto?
+
+Poteva servirmi?
+				</textarea>
+			</section>
+        </section>
+
+
+
+        <section>
+            <section data-markdown>
+				<textarea data-template>
+# Lifetime
+				</textarea>
+			</section>
+            <section data-markdown>
+				<textarea data-template>
+## É il meglio che posso avere?
+
+```rust
+struct View<'a> {
+	buff: &'a[u8]
+}
+
+impl<'a> View<'a> {
+	fn get_buff(&self) -> &[u8] {
+		self.buff
+	}
+}
+```
+				</textarea>
+			</section>
+            <section data-markdown>
+				<textarea data-template>
+## Mi piacerebbe questo:
+```rust
+fn main() {
+	let v = vec![0,1,2,3];
+	let t = {
+		let b = View{buff:&v[..]};
+		b.get_buff()
+	};
+}
+```
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+## Facile
+```rust
+impl<'a> View<'a> {
+	fn get_buff(&mut self) -> &'a[u8] {
+		self.buff
+	}
+}
+```
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+					## E qui?
+```rust
+impl<T: AsRef<[u8]>> View<T> {
+    fn get_buff(& self) -> &[u8] {
+        self.b.as_ref()
+    }
+}
+```
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+## Cosí
+```rust
+impl<'a, T: AsRef<[u8]> + ?Sized> View<&'a T> {
+	fn get_buff<'b>(& 'b self) -> &'a [u8] {
+		self.b.as_ref()
+	}
+}
+```
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+## Ma non vale sempre.
+
+* solo in questo caso possiamo (solo?)
+
+* e negli altri casi?
+
+* due funzioni diverse?
+
+---
+
+`comodo ma non mi piace`
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+## Specialization!
+
+```rust
+trait GetBuff<'a,'b> {
+    fn get_buff(&'b self) -> &'a [u8];
+}
+impl<'a, T: AsRef<[u8]> > GetBuff<'a,'a> for  View<T> {
+    default fn get_buff(&'a self) -> &'a [u8] {
+        self.b.as_ref()
+    }
+}
+impl<'b, 'a, T: AsRef<[u8]> + ?Sized> GetBuff<'a,'b>
+					for  View<&'a T> {
+    fn get_buff(&'b self) -> &'a [u8] {
+        self.b.as_ref()
+    }
+}
+```
+				</textarea>
+			</section>
+        </section>
+        <section>
+            <section data-markdown>
+				<textarea data-template>
+# Bonus track - mutabilitá
+## Qui non ho certezze
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+## Quale lifetime massimo posso desiderare?
+```rust
+struct ViewMut<'a> {
+	buff: &'a mut [u8]
+}
+
+impl<'a> ViewMut<'a> {
+	fn get_buff(&self) -> &???[u8] {
+		self.buff
+	}
+}
+```
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+```
+error[E0312]: lifetime of reference outlives lifetime of borrowed content...
+  --> main.rs:11:3
+   |
+11 |         self.buff
+   |         ^^^^^^^^^
+   |
+note: ...the reference is valid for the lifetime 'a as defined on the impl at 9:6...
+  --> main.rs:9:6
+   |
+9  | impl<'a> ViewMut<'a> {
+   |      ^^
+note: ...but the borrowed content is only valid for the anonymous lifetime #1 defined on the method body at 10:2
+  --> main.rs:10:2
+   |
+10 |       fn get_buff(& self) -> &'a[u8] {
+   |  _____^
+11 | |         self.buff
+12 | |     }
+   | |_____^
+```
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+## Perché? Cosa ho fatto di male?
+
+Perché questo invece funziona?
+```rust
+impl<'a> ViewMut<'a> {
+	fn get_buff(&self) -> &[u8] {
+		self.buff
+	}
+}
+```
+---
+(se consumassi self?)
+				</textarea>
+			</section>
+			<section data-markdown>
+				<textarea data-template>
+					# UNSAFE...
+				</textarea>
+			</section>
+
+		</section>
+    </div>
+</div>
+
+
+<script src="lib/js/head.min.js"></script>
+<script src="js/reveal.js"></script>
+<script>
+			Reveal.initialize({
+				mouseWheel: true,
+				transition: 'none',
+				controls: true,
+				dependencies: [
+					{ src: 'plugin/external/external.js' } ,
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+					{ src: 'socket.io/socket.io.js', async: true },
+					{ src: 'plugin/notes-server/client.js', async: true },
+				]
+			});
+
+
+
+</script>
+</body>
+</html>
